@@ -521,8 +521,20 @@ pre.code-block.folded code { display: none; }
   max-width: var(--welcome-line-w);
   font-size: 22px; font-weight: 400;
   line-height: 1.6; text-align: center;
-  word-break: break-word; white-space: normal;
+  word-break: break-word; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
   margin: 0 auto 10px;
+}
+.welcome-title.answer.typing::after {
+  content: '|';
+  display: inline-block;
+  width: 2px; margin-left: 2px;
+  color: var(--muted);
+  animation: art-cursor-blink 1s step-end infinite;
+}
+@keyframes art-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 .welcome-line { height: 3px; width: var(--welcome-line-w); margin: 0 auto; background: var(--muted); }
 /* 标记区：红色三角形 + 3×3 动画画布（同位置过渡） */

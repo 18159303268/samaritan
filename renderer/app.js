@@ -31,6 +31,7 @@
   let welcomeTimer = null;
 
   let artMode = false;   // 艺术模式：极简画布呈现回答
+  let artAnimController = null; // 艺术模式回答动画控制器
 
   let config = { baseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', autoLaunch: false, workspaceDir: '' };
   let sessions = [];       // [{id,title,messages:[{role,content,reasoning?}]}]
@@ -336,6 +337,98 @@
       '</div>';
   }
 
+  // 语义拆分：尽量按词切分（中文用 Intl.Segmenter 分词，英文/数字整体保留），避免中英混拆
+  function splitSemanticTokens(text) {
+    const raw = (text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '[图片]').trim();
+    if (!raw) return [];
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      try {
+        const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+        const tokens = [];
+        for (const s of segmenter.segment(raw)) {
+          const seg = s.segment.trim();
+          if (s.isWordLike && seg) tokens.push(seg);
+        }
+        if (tokens.length) return tokens;
+      } catch (e) {}
+    }
+    // 降级：按字符类型边界拆分，保证英文/数字不被拆开、中文单字独立
+    const tokens = [];
+    let cur = '';
+    let lastType = null;
+    const typeOf = (ch) => {
+      if (/[a-zA-Z0-9._\-]/.test(ch)) return 'latin';
+      if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(ch)) return 'cjk';
+      return 'other';
+    };
+    for (const ch of raw) {
+      const t = typeOf(ch);
+      if (t === lastType && t !== 'other') {
+        cur += ch;
+      } else {
+        if (cur && lastType !== 'other') tokens.push(cur);
+        cur = t === 'other' ? '' : ch;
+      }
+      lastType = t;
+    }
+    if (cur && lastType !== 'other') tokens.push(cur);
+    if (!tokens.length) return [raw];
+    return tokens;
+  }
+
+  // 艺术模式：逐个词「打字出现 → 停顿 → 删除 → 下一个」，最后一个词保留
+  function playArtTokens(title, tokens) {
+    if (!tokens.length) { title.textContent = ''; return; }
+    let cancelled = false;
+    let activeTimer = null;
+    const controller = {
+      cancel: () => {
+        cancelled = true;
+        if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+      }
+    };
+    artAnimController = controller;
+    title.classList.add('typing');
+
+    const wait = (ms) => new Promise((resolve) => {
+      if (cancelled) return resolve();
+      activeTimer = setTimeout(resolve, ms);
+    });
+
+    const typeWord = async (word) => {
+      for (let i = 1; i <= word.length; i++) {
+        if (cancelled) return;
+        title.textContent = word.slice(0, i);
+        await wait(80);
+      }
+    };
+
+    const deleteWord = async (word) => {
+      for (let i = word.length - 1; i >= 0; i--) {
+        if (cancelled) return;
+        title.textContent = word.slice(0, i);
+        await wait(45);
+      }
+    };
+
+    (async () => {
+      for (let idx = 0; idx < tokens.length; idx++) {
+        if (cancelled) return;
+        await typeWord(tokens[idx]);
+        if (cancelled) return;
+        await wait(360);
+        if (idx < tokens.length - 1) {
+          if (cancelled) return;
+          await deleteWord(tokens[idx]);
+          if (cancelled) return;
+          await wait(140);
+        }
+      }
+      title.classList.remove('typing');
+      artAnimController = null;
+    })();
+  }
+
   // 把回答以极简小字号渲染到画布文字区
   function renderArtAnswer(text) {
     const title = $('#welcome-title');
@@ -345,7 +438,16 @@
     title.classList.add('answer');
     title.style.width = 'var(--welcome-line-w)';
     title.style.fontSize = '';
-    title.textContent = clean;
+    if (artAnimController) artAnimController.cancel();
+
+    if (busy) {
+      // 生成过程中直接显示当前累积文本，不播放逐词动画
+      title.textContent = clean;
+      title.classList.remove('typing');
+      return;
+    }
+    const tokens = splitSemanticTokens(clean);
+    playArtTokens(title, tokens);
   }
 
   function artSystemPrompt() {
@@ -1341,6 +1443,10 @@
       { tag: 'fix', text: '修复部分地区无法直连 GitHub 导致更新失败的问题，新增镜像源自动切换和手动下载入口' },
       { tag: 'fix', text: '修复手动下载按钮打不开的问题，现在直接通过镜像源下载安装包' },
       { tag: 'fix', text: '恢复侧边栏的「设置」入口' },
+    ],
+    '1.2.0': [
+      { tag: 'new', text: '艺术模式回答动效：回答完成后按语义拆词，逐词「打字出现 → 回退删除 → 下一个词」循环播放，模拟 AI 思考输入' },
+      { tag: 'improve', text: '艺术模式语义分词：优先使用 Intl.Segmenter 按词切分，英文/数字整体保留，避免中英混拆' },
     ],
   };
 
