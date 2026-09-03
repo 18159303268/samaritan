@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>Samaritan</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- 左侧边栏：会话列表 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span class="logo">◆</span>
+      <span class="title">Samaritan</span>
+      <button id="btn-collapse" class="icon-btn collapse-btn" data-i18n="collapseSidebar" data-i18n-attr="title" aria-label="收起侧边栏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="5" x2="7" y2="19"/></svg>
+      </button>
+    </div>
+    <button id="btn-new-chat" class="new-chat" data-i18n="newChat">+ 新对话</button>
+    <div id="session-list" class="session-list"></div>
+    <div id="export-actions" class="export-actions hidden">
+      <button id="btn-do-export" class="foot-btn primary" data-i18n="exportSelected">导出选中</button>
+      <button id="btn-cancel-export" class="foot-btn" data-i18n="cancelExport">取消</button>
+    </div>
+    <div class="sidebar-foot">
+      <button id="btn-settings" class="foot-btn settings-btn" data-i18n="settings" aria-label="设置">⚙ 设置</button>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="btn-expand" class="icon-btn expand-btn hidden" data-i18n="expandSidebar" data-i18n-attr="title" aria-label="展开侧边栏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="5" x2="7" y2="19"/></svg>
+        </button>
+        <div class="topbar-title" id="current-title" data-i18n="newChatTitle">新对话</div>
+      </div>
+      <div class="topbar-right">
+        <button id="btn-pin" class="icon-btn" data-i18n="pin" data-i18n-attr="title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M12 11v9"/></svg></button>
+        <button id="btn-theme" class="icon-btn" data-i18n="theme" data-i18n-attr="title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 1 0 21 12.79z"/></svg></button>
+        <select id="model-select" class="model-select" data-i18n="selectModel" data-i18n-attr="title"></select>
+      </div>
+    </header>
+
+    <!-- 对话区 -->
+    <main id="messages" class="messages"></main>
+
+    <!-- 输入区 -->
+    <footer class="composer">
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行" data-i18n="inputPlaceholder" data-i18n-attr="placeholder"></textarea>
+        <button id="btn-send" class="send-btn" data-i18n="send" data-i18n-attr="title">
+          <span class="send-text">发送</span>
+          <canvas class="send-cluster"></canvas>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+</div>
+
+<!-- 设置弹窗 -->
+<div id="settings-mask" class="mask hidden">
+  <div class="settings-panel">
+    <h2 id="settings-title">设置</h2>
+    <div class="settings-layout">
+      <div class="settings-nav">
+        <button class="nav-item active" data-tab="api" id="nav-api">API配置</button>
+        <button class="nav-item" data-tab="general" id="nav-general">通用</button>
+        <button class="nav-item" data-tab="about" id="nav-about" data-i18n="navAbout">关于</button>
+      </div>
+      <div class="settings-body">
+        <div class="tab-panel active" data-tab="api">
+          <label class="field">
+            <span id="lbl-baseUrl">API 地址</span>
+            <input id="cfg-baseUrl" type="text" placeholder="https://api.deepseek.com">
+          </label>
+          <label class="field">
+            <span id="lbl-apiKey">API Key</span>
+            <input id="cfg-apiKey" type="password" placeholder="sk-...">
+          </label>
+          <div class="key-help">
+            <a id="cfg-get-key" href="#" title="在浏览器中打开 DeepSeek 开放平台">如何获取 API Key？</a>
+            <span id="txt-get-key">前往 DeepSeek 开放平台注册并创建</span>
+          </div>
+          <label class="field">
+            <span id="lbl-model">模型</span>
+            <input id="cfg-model" type="text" placeholder="deepseek-v4-flash">
+          </label>
+          <div class="presets">
+            <button class="preset" data-model="deepseek-v4-flash" data-url="https://api.deepseek.com">DeepSeek-V4-Flash</button>
+            <button class="preset" data-model="deepseek-v4-pro" data-url="https://api.deepseek.com">DeepSeek-V4-Pro</button>
+            <button class="preset" data-model="deepseek-chat" data-url="https://api.deepseek.com">DeepSeek-V3</button>
+            <button class="preset" data-model="deepseek-reasoner" data-url="https://api.deepseek.com">DeepSeek-R1（思考）</button>
+            <button class="preset" data-model="gpt-4o" data-url="https://api.openai.com/v1">GPT-4o</button>
+          </div>
+        </div>
+        <div class="tab-panel" data-tab="general">
+          <div class="field row">
+            <div class="field-label" id="lbl-artMode">艺术模式</div>
+            <label class="toggle">
+              <input id="cfg-artMode" type="checkbox">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="field-desc" id="desc-artMode">以极简艺术画布呈现回答，不显示历史消息</p>
+          <div class="field row">
+            <div class="field-label" id="lbl-autoLaunch">开机自启</div>
+            <label class="toggle">
+              <input id="cfg-autoLaunch" type="checkbox">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="field-desc" id="desc-autoLaunch">登录 Windows 时自动启动 Samaritan</p>
+          <div class="field">
+            <span id="lbl-lang">界面语言</span>
+            <select id="cfg-lang" class="select-input">
+              <option value="zh">简体中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="field">
+            <span id="lbl-workspace">默认工作空间目录</span>
+            <div class="workspace-row">
+              <input id="cfg-workspace" type="text" placeholder="选择 AI 产出内容保存目录" readonly>
+              <button id="btn-browse-workspace" class="ghost">浏览</button>
+            </div>
+          </div>
+          <div class="field">
+            <span id="lbl-sessions">会话记录</span>
+            <div class="session-actions-row">
+              <button id="btn-export-sessions" class="foot-btn" data-i18n="exportSessions">导出聊天记录</button>
+              <button id="btn-import-sessions" class="foot-btn" data-i18n="importSessions">导入聊天记录</button>
+            </div>
+          </div>
+        </div>
+        <div class="tab-panel" data-tab="about">
+          <div class="about-version-row">
+            <div class="about-version-label">
+              <span data-i18n="currentVersion">当前版本</span>
+              <strong id="about-version">v1.0.0</strong>
+            </div>
+            <button id="btn-check-update" class="ghost check-update-btn" data-i18n="checkUpdate">检查更新</button>
+          </div>
+          <div id="update-status" class="update-status"></div>
+          <div id="update-progress" class="update-progress hidden">
+            <div class="update-progress-bar" id="update-progress-bar"></div>
+          </div>
+          <div class="about-extra">
+            <p data-i18n="aboutBody">测试项目，内容由AI生成，请核实重要信息。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-actions">
+      <button id="btn-close" class="primary" data-i18n="closeBtn">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="loading-cluster.js"></script>
+<script src="md.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

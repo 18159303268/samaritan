@@ -1,0 +1,28 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  getConfig: () => ipcRenderer.invoke('config:get'),
+  setConfig: (cfg) => ipcRenderer.invoke('config:set', cfg),
+  streamChat: (payload) => ipcRenderer.invoke('chat:stream', payload),
+  abortChat: () => ipcRenderer.send('chat:abort'),
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
+  openExternal: (url) => ipcRenderer.invoke('open:external', url),
+  setLang: (lang) => ipcRenderer.invoke('lang:set', lang),
+  setAlwaysOnTop: (v) => ipcRenderer.invoke('window:set-always-on-top', v),
+  getAutoLaunch: () => ipcRenderer.invoke('auto-launch:get'),
+  setAutoLaunch: (v) => ipcRenderer.invoke('auto-launch:set', v),
+  selectWorkspace: () => ipcRenderer.invoke('workspace:select'),
+  generateTitle: (payload) => ipcRenderer.invoke('title:generate', payload),
+  exportSessions: (data) => ipcRenderer.invoke('sessions:export', data),
+  importSessions: (payload) => ipcRenderer.invoke('sessions:import', payload),
+  exportSessionMd: (payload) => ipcRenderer.invoke('session:export-md', payload),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: (payload) => ipcRenderer.invoke('update:download', payload),
+  applyUpdate: () => ipcRenderer.invoke('update:apply'),
+  onChunk: (cb) => { ipcRenderer.removeAllListeners('chat:chunk'); ipcRenderer.on('chat:chunk', (e, data) => cb(data)); },
+  onDone: (cb) => { ipcRenderer.removeAllListeners('chat:done'); ipcRenderer.on('chat:done', () => cb()); },
+  onError: (cb) => { ipcRenderer.removeAllListeners('chat:error'); ipcRenderer.on('chat:error', (e, msg) => cb(msg)); },
+  onShowAbout: (cb) => { ipcRenderer.removeAllListeners('show:about'); ipcRenderer.on('show:about', () => cb()); },
+  onUpdateProgress: (cb) => { ipcRenderer.removeAllListeners('update:progress'); ipcRenderer.on('update:progress', (e, data) => cb(data)); },
+});
