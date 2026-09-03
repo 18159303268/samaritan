@@ -7,7 +7,8 @@ const fs = require('fs');
 // 上传 asset 名为 "Samaritan.exe" 的 portable 单文件即可。
 const UPDATE_REPO = '18159303268/samaritan';
 const UPDATE_ASSET_NAME = 'Samaritan.exe';
-const UPDATE_TIMEOUT = 30000; // 单次下载源超时（毫秒）
+const UPDATE_TIMEOUT = 30000;      // 数据接收超时（毫秒）
+const UPDATE_CONNECT_TIMEOUT = 10000; // 连接超时（毫秒），快速切换到镜像源
 const UPDATE_MIRRORS = [
   '',                         // 主源（GitHub 直链）
   'https://mirror.ghproxy.com/',
@@ -191,12 +192,15 @@ ipcMain.handle('update:check', async () => {
     const asset = (json.assets || []).find(a => a.name === UPDATE_ASSET_NAME);
     if (!asset) throw new Error('未找到更新文件，请确认 Releases 中包含 ' + UPDATE_ASSET_NAME);
     const hasUpdate = compareVersion(latest, current) > 0;
+    const mirrorUrls = makeDownloadUrls(asset.browser_download_url);
     return {
       ok: true,
       current,
       latest,
       hasUpdate,
       url: asset.browser_download_url,
+      mirrorUrls,
+      manualUrl: mirrorUrls[1] || mirrorUrls[0] || asset.browser_download_url,
       size: asset.size || 0,
       body,
       releaseUrl: `https://github.com/${UPDATE_REPO}/releases/tag/v${latest}`,
@@ -213,8 +217,8 @@ function makeDownloadUrls(primaryUrl) {
     .filter((v, i, a) => a.indexOf(v) === i);
 }
 
-// 下载更新（递归处理 302/307 重定向；带连接/数据超时，避免长时间卡 0%）
-function downloadWithProgress(url, dest, size, sendProgress, timeout = UPDATE_TIMEOUT) {
+// 下载更新（递归处理 302/307 重定向；连接超时与数据超时分离，避免长时间卡 0%）
+function downloadWithProgress(url, dest, size, sendProgress, timeout = UPDATE_TIMEOUT, connectTimeout = UPDATE_CONNECT_TIMEOUT) {
   return new Promise((resolve, reject) => {
     const https = require('https');
     const file = fs.createWriteStream(dest);
@@ -243,6 +247,7 @@ function downloadWithProgress(url, dest, size, sendProgress, timeout = UPDATE_TI
     function go(u) {
       const req = https.get(u, {
         headers: { 'User-Agent': 'Samaritan-Updater/1.0', Accept: 'application/octet-stream' },
+        timeout: connectTimeout,
       }, (res) => {
         resetTimer(req);
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -264,9 +269,9 @@ function downloadWithProgress(url, dest, size, sendProgress, timeout = UPDATE_TI
         res.on('error', finish);
       });
       req.on('error', finish);
-      req.setTimeout(timeout, () => {
+      req.on('timeout', () => {
         req.destroy();
-        finish(new Error('连接超时，请检查网络或挂梯子后重试'));
+        finish(new Error('连接超时，正在切换下载源'));
       });
     }
 

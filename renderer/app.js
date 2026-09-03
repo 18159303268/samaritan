@@ -1269,13 +1269,14 @@
     btn.disabled = false;
     if (!res.ok) {
       setUpdateProgress(null);
-      const manualBtn = updateInfo && updateInfo.releaseUrl
+      const manualUrl = updateInfo && (updateInfo.manualUrl || updateInfo.url);
+      const manualBtn = manualUrl
         ? ' <button id="btn-manual-download" class="primary" style="margin-left:8px;padding:4px 10px;font-size:12px;border-radius:6px;">' + escapeHtml(t('manualDownload')) + '</button>'
         : '';
       setUpdateStatus(escapeHtml(t('updateFailed', { error: res.error || '' })) + manualBtn, 'error');
-      if (updateInfo && updateInfo.releaseUrl) {
+      if (manualUrl) {
         $('#btn-manual-download').addEventListener('click', () => {
-          window.api.openExternal(updateInfo.releaseUrl);
+          window.api.openExternal(manualUrl);
         });
       }
       return;
@@ -1326,6 +1327,10 @@
       { tag: 'improve', text: '消息操作更精致：悬浮在你的消息上可快速「编辑 / 复制」；悬浮在 AI 回复上可「复制」，并显示发送/回复时间' },
       { tag: 'fix', text: '恢复侧边栏的「设置」入口' },
       { tag: 'fix', text: '修复部分地区更新卡在 0% 的问题：新增多镜像源自动切换和手动下载入口' },
+    ],
+    '1.1.5': [
+      { tag: 'fix', text: '修复手动下载按钮仍打开 GitHub 页面导致无法访问的问题，现在直接通过镜像源下载安装包' },
+      { tag: 'improve', text: '缩短自动下载连接超时时间，主源不可用时更快切换到镜像源' },
     ],
   };
 
