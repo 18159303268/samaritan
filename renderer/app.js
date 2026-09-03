@@ -47,6 +47,7 @@
   const LS_LANG = 'ai-chat-lang';
   const LS_ART = 'ai-chat-art-mode';
   const LS_COLLAPSE = 'ai-chat-sidebar-collapsed';
+  const LS_VERSION = 'ai-chat-last-version';
 
   // ---------- i18n ----------
   const I18N = {
@@ -76,6 +77,7 @@
       alreadyLatest: '已是最新版本', updateAvailable: '发现新版本 {version}', updateSize: '大小：{size}',
       updateNow: '立即更新', updateLater: '稍后', updateDownloading: '正在下载更新… {percent}%',
       updateDownloaded: '下载完成，点击立即更新以应用', updateFailed: '检查更新失败：{error}',
+      whatsNew: '更新公告', gotIt: '知道了',
       aboutBody: '测试项目，内容由AI生成，请核实重要信息。',
       roleUser: '我', roleAi: 'AI',
       thinkingHint: '正在思考', thinkingSummary: '💭 思考过程',
@@ -115,6 +117,7 @@
       alreadyLatest: 'Already up to date', updateAvailable: 'New version {version} available', updateSize: 'Size: {size}',
       updateNow: 'Update now', updateLater: 'Later', updateDownloading: 'Downloading update… {percent}%',
       updateDownloaded: 'Download complete, click Update now to apply', updateFailed: 'Update check failed: {error}',
+      whatsNew: "What's New", gotIt: 'Got it',
       aboutBody: 'Test project. Content is AI-generated, please verify important information.',
       roleUser: 'Me', roleAi: 'AI',
       thinkingHint: 'Thinking', thinkingSummary: '💭 Reasoning',
@@ -1286,6 +1289,53 @@
 
   $('#btn-check-update').addEventListener('click', checkUpdate);
 
+  // ---------- 更新公告（应用内弹窗） ----------
+  const RELEASE_NOTES = {
+    '1.1.0': [
+      { tag: 'new', text: '新增「关于」页面，可查看当前版本' },
+      { tag: 'new', text: '新增自动更新：检查 / 下载 / 一键升级' },
+      { tag: 'improve', text: '优化消息操作：用户消息显示发送时间 + 编辑 + 复制，AI 回复显示回复时间 + 复制' },
+      { tag: 'fix', text: '恢复侧边栏「设置」入口' },
+    ],
+    '1.1.1': [
+      { tag: 'new', text: '新增更新公告：新版本首次启动时，以应用内弹窗展示本次更新内容' },
+    ],
+  };
+
+  function openChangelog(ver) {
+    const notes = RELEASE_NOTES[ver];
+    if (!notes || !notes.length) return;
+    const tagLabels = { new: '新增', improve: '优化', fix: '修复' };
+    $('#changelog-version').textContent = 'v' + ver;
+    $('#changelog-body').innerHTML = '<ul>' + notes.map(n =>
+      '<li><span class="cl-tag ' + n.tag + '">' + escapeHtml(tagLabels[n.tag] || '') + '</span><span>' + escapeHtml(n.text) + '</span></li>'
+    ).join('') + '</ul>';
+    $('#changelog-mask').classList.remove('hidden');
+  }
+  function closeChangelog() {
+    $('#changelog-mask').classList.add('hidden');
+  }
+  function hasExistingData() {
+    try { if (localStorage.getItem(LS_KEY)) return true; } catch (e) {}
+    return !!(config && config.apiKey);
+  }
+  async function maybeShowUpdateAnnouncement() {
+    let ver;
+    try { ver = await window.api.appVersion(); } catch (e) { return; }
+    const last = localStorage.getItem(LS_VERSION);
+    // 仅当「版本发生变化」时展示；首次记录版本(last=null)时，只在非全新安装（有历史数据）下展示
+    if (last !== ver && RELEASE_NOTES[ver] && (last !== null || hasExistingData())) {
+      openChangelog(ver);
+    }
+    try { localStorage.setItem(LS_VERSION, ver); } catch (e) {}
+  }
+
+  $('#btn-changelog-close').addEventListener('click', closeChangelog);
+  $('#btn-changelog-ok').addEventListener('click', closeChangelog);
+  $('#changelog-mask').addEventListener('click', (e) => {
+    if (e.target.id === 'changelog-mask') closeChangelog();
+  });
+
   // ---------- 初始化 ----------
   async function init() {
     applyTheme(localStorage.getItem(LS_THEME) || 'light');
@@ -1298,6 +1348,7 @@
     loadSessions();
     applySidebarCollapsed(localStorage.getItem(LS_COLLAPSE) === '1');
     loadVersion();
+    maybeShowUpdateAnnouncement();
     renderSessionList();
     renderActiveSession();
     const cur = activeSession();

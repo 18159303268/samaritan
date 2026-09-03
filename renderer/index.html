@@ -162,6 +162,26 @@
   </div>
 </div>
 
+<!-- 更新公告弹窗（应用内，非系统级） -->
+<div id="changelog-mask" class="mask changelog-mask hidden">
+  <div class="changelog-panel" role="dialog" aria-modal="true" aria-labelledby="changelog-title">
+    <div class="changelog-head">
+      <div class="changelog-badge">◆</div>
+      <div class="changelog-head-text">
+        <h2 id="changelog-title" data-i18n="whatsNew">更新公告</h2>
+        <div class="changelog-version" id="changelog-version">v1.0.0</div>
+      </div>
+      <button id="btn-changelog-close" class="icon-btn changelog-close" data-i18n="closeBtn" data-i18n-attr="title" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="changelog-body" id="changelog-body"></div>
+    <div class="changelog-actions">
+      <button id="btn-changelog-ok" class="primary" data-i18n="gotIt">知道了</button>
+    </div>
+  </div>
+</div>
+
 <script src="loading-cluster.js"></script>
 <script src="md.js"></script>
 <script src="app.js"></script>
