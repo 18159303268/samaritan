@@ -77,6 +77,7 @@
       alreadyLatest: '已是最新版本', updateAvailable: '发现新版本 {version}', updateSize: '大小：{size}',
       updateNow: '立即更新', updateLater: '稍后', updateDownloading: '正在下载更新… {percent}%',
       updateDownloaded: '下载完成，点击立即更新以应用', updateFailed: '检查更新失败：{error}',
+      manualDownload: '手动下载',
       whatsNew: '更新公告', gotIt: '知道了',
       aboutBody: '测试项目，内容由AI生成，请核实重要信息。',
       roleUser: '我', roleAi: 'AI',
@@ -117,6 +118,7 @@
       alreadyLatest: 'Already up to date', updateAvailable: 'New version {version} available', updateSize: 'Size: {size}',
       updateNow: 'Update now', updateLater: 'Later', updateDownloading: 'Downloading update… {percent}%',
       updateDownloaded: 'Download complete, click Update now to apply', updateFailed: 'Update check failed: {error}',
+      manualDownload: 'Manual download',
       whatsNew: "What's New", gotIt: 'Got it',
       aboutBody: 'Test project. Content is AI-generated, please verify important information.',
       roleUser: 'Me', roleAi: 'AI',
@@ -1267,7 +1269,15 @@
     btn.disabled = false;
     if (!res.ok) {
       setUpdateProgress(null);
-      setUpdateStatus(escapeHtml(t('updateFailed', { error: res.error || '' })), 'error');
+      const manualBtn = updateInfo && updateInfo.releaseUrl
+        ? ' <button id="btn-manual-download" class="primary" style="margin-left:8px;padding:4px 10px;font-size:12px;border-radius:6px;">' + escapeHtml(t('manualDownload')) + '</button>'
+        : '';
+      setUpdateStatus(escapeHtml(t('updateFailed', { error: res.error || '' })) + manualBtn, 'error');
+      if (updateInfo && updateInfo.releaseUrl) {
+        $('#btn-manual-download').addEventListener('click', () => {
+          window.api.openExternal(updateInfo.releaseUrl);
+        });
+      }
       return;
     }
     setUpdateProgress(100);
@@ -1305,6 +1315,9 @@
       { tag: 'new', text: '更新公告弹窗：每次升级后首次启动，会自动弹出本次更新内容说明' },
       { tag: 'improve', text: '消息操作更精致：鼠标悬浮在你的消息上可快速「编辑 / 复制」；悬浮在 AI 回复上可「复制」，并显示发送/回复时间' },
       { tag: 'fix', text: '恢复侧边栏的「设置」入口' },
+    ],
+    '1.1.3': [
+      { tag: 'fix', text: '修复部分地区无法直连 GitHub 下载导致更新卡在 0% 的问题，新增镜像源自动切换和手动下载入口' },
     ],
   };
 

@@ -1,6 +1,6 @@
 {
   "name": "ai-chat",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Samaritan",
   "main": "main.js",
   "scripts": {
@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.laopeng.aichat",
     "productName": "Samaritan",
+    "compression": "normal",
     "directories": {
       "output": "dist"
     },

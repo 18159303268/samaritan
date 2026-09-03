@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-old-*/
+7zip-temp/
 release-body.json
 *.log
 .DS_Store

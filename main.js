@@ -7,6 +7,13 @@ const fs = require('fs');
 // 上传 asset 名为 "Samaritan.exe" 的 portable 单文件即可。
 const UPDATE_REPO = '18159303268/samaritan';
 const UPDATE_ASSET_NAME = 'Samaritan.exe';
+const UPDATE_TIMEOUT = 30000; // 单次下载源超时（毫秒）
+const UPDATE_MIRRORS = [
+  '',                         // 主源（GitHub 直链）
+  'https://mirror.ghproxy.com/',
+  'https://ghproxy.com/',
+  'https://gh.hx-proxies.uk/',
+];
 // =====================================================
 
 // 无 GPU / 远程桌面环境下走软渲染，避免 GPU 进程崩溃拖垮渲染进程
@@ -192,42 +199,77 @@ ipcMain.handle('update:check', async () => {
       url: asset.browser_download_url,
       size: asset.size || 0,
       body,
+      releaseUrl: `https://github.com/${UPDATE_REPO}/releases/tag/v${latest}`,
     };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 });
 
-// 下载更新（递归处理 302/307 重定向）
-function downloadWithProgress(url, dest, size, sendProgress) {
+// 构造下载 fallback URLs（主源 + 镜像源）
+function makeDownloadUrls(primaryUrl) {
+  return UPDATE_MIRRORS
+    .map(m => (m + primaryUrl).replace(/^(https?:\/\/)(https?:\/\/)/, '$2'))
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+
+// 下载更新（递归处理 302/307 重定向；带连接/数据超时，避免长时间卡 0%）
+function downloadWithProgress(url, dest, size, sendProgress, timeout = UPDATE_TIMEOUT) {
   return new Promise((resolve, reject) => {
     const https = require('https');
     const file = fs.createWriteStream(dest);
     let received = 0;
     let finished = false;
+    let dataTimer = null;
+
+    function clearTimer() {
+      if (dataTimer) { clearTimeout(dataTimer); dataTimer = null; }
+    }
+    function resetTimer(req) {
+      clearTimer();
+      dataTimer = setTimeout(() => {
+        req.destroy();
+        finish(new Error('下载超时，网络连接中断或速度过慢'));
+      }, timeout);
+    }
     function finish(err) {
       if (finished) return;
       finished = true;
+      clearTimer();
       file.destroy();
       if (err) reject(err); else resolve();
     }
+
     function go(u) {
-      https.get(u, { headers: { 'User-Agent': 'Samaritan-Updater/1.0', Accept: 'application/octet-stream' } }, (res) => {
+      const req = https.get(u, {
+        headers: { 'User-Agent': 'Samaritan-Updater/1.0', Accept: 'application/octet-stream' },
+      }, (res) => {
+        resetTimer(req);
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
           go(res.headers.location);
           return;
         }
-        if (res.statusCode !== 200) { finish(new Error('下载失败 (' + res.statusCode + ')')); return; }
+        if (res.statusCode !== 200) {
+          finish(new Error('下载失败 (' + res.statusCode + ')'));
+          return;
+        }
         res.on('data', (chunk) => {
           received += chunk.length;
           file.write(chunk);
+          resetTimer(req);
           if (size) sendProgress(Math.min(100, Math.round((received / size) * 100)), received, size);
         });
-        res.on('end', () => file.end());
+        res.on('end', () => { clearTimer(); file.end(); });
         res.on('error', finish);
-      }).on('error', finish);
+      });
+      req.on('error', finish);
+      req.setTimeout(timeout, () => {
+        req.destroy();
+        finish(new Error('连接超时，请检查网络或挂梯子后重试'));
+      });
     }
+
     file.on('finish', () => finish());
     file.on('error', finish);
     go(url);
@@ -241,11 +283,23 @@ ipcMain.handle('update:download', async (e, { url, size }) => {
     const target = path.join(updateDir, UPDATE_ASSET_NAME);
     const temp = target + '.tmp';
     if (fs.existsSync(temp)) fs.unlinkSync(temp);
-    await downloadWithProgress(url, temp, size, (percent, received, total) => {
-      e.sender.send('update:progress', { percent, received, total });
-    });
-    fs.renameSync(temp, target);
-    return { ok: true, path: target };
+
+    const urls = makeDownloadUrls(url);
+    let lastErr = null;
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        if (fs.existsSync(temp)) fs.unlinkSync(temp);
+        await downloadWithProgress(urls[i], temp, size, (percent, received, total) => {
+          e.sender.send('update:progress', { percent, received, total });
+        });
+        fs.renameSync(temp, target);
+        return { ok: true, path: target };
+      } catch (err) {
+        lastErr = err;
+        // 继续尝试下一个镜像源
+      }
+    }
+    throw lastErr || new Error('所有下载源均失败，请挂梯子或到 Release 页面手动下载');
   } catch (err) {
     return { ok: false, error: err.message };
   }
