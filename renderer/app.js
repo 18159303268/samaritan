@@ -32,6 +32,8 @@
 
   let artMode = false;   // 艺术模式：极简画布呈现回答
   let artAnimController = null; // 艺术模式回答动画控制器
+  let artSpeed = 3;      // 艺术模式词语弹出速度档位（1-5，3 为默认中速）
+  let artStyle = 'standard'; // 艺术模式回复风格：brief / standard / complex
 
   let config = { baseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', autoLaunch: false, workspaceDir: '' };
   let sessions = [];       // [{id,title,messages:[{role,content,reasoning?}]}]
@@ -47,8 +49,22 @@
   const LS_THEME = 'ai-chat-theme';
   const LS_LANG = 'ai-chat-lang';
   const LS_ART = 'ai-chat-art-mode';
+  const LS_ART_SPEED = 'ai-chat-art-speed';
+  const LS_ART_STYLE = 'ai-chat-art-style';
   const LS_COLLAPSE = 'ai-chat-sidebar-collapsed';
   const LS_VERSION = 'ai-chat-last-version';
+
+  // 艺术模式速度档位 → 动画时长倍率（speed=3 为默认 1.0x）
+  const ART_SPEED_LABELS_ZH = ['', '极慢', '慢', '中', '快', '极速'];
+  const ART_SPEED_LABELS_EN = ['', 'Slowest', 'Slow', 'Medium', 'Fast', 'Fastest'];
+  function getArtSpeedMultiplier() {
+    // 1→2.0x（慢），2→1.4x，3→1.0x，4→0.65x，5→0.4x（快）
+    return [2.0, 1.4, 1.0, 0.65, 0.4][artSpeed - 1] || 1.0;
+  }
+  function getArtSpeedLabel() {
+    const arr = lang === 'en' ? ART_SPEED_LABELS_EN : ART_SPEED_LABELS_ZH;
+    return arr[artSpeed] || arr[3];
+  }
 
   // ---------- i18n ----------
   const I18N = {
@@ -70,7 +86,11 @@
       getKeyLink: '如何获取 API Key？', getKeyDesc: '前往 DeepSeek 开放平台注册并创建',
       lblModel: '模型',
       lblAutoLaunch: '开机自启', descAutoLaunch: '登录 Windows 时自动启动 Samaritan',
-      lblArtMode: '艺术模式', descArtMode: '以极简艺术画布呈现回答，不显示历史消息',
+      lblArtMode: '启用艺术模式', descArtMode: '以极简艺术画布呈现回答，不显示历史消息',
+      lblArtSpeed: '词语弹出速度', descArtSpeed: '控制艺术模式回答时词语打字与删除的速度',
+      lblArtStyle: '回复风格', descArtStyle: '决定艺术模式下 AI 回答的长度与详细程度',
+      artStyleBrief: '简短', artStyleStandard: '标准', artStyleComplex: '复杂',
+      navArt: '艺术模式',
       lblLang: '界面语言', lblWorkspace: '默认工作空间目录',
       btnBrowse: '浏览',
       btnCancel: '取消', btnSave: '保存', closeBtn: '关闭',
@@ -111,7 +131,11 @@
       getKeyLink: 'How to get API Key?', getKeyDesc: 'Go to DeepSeek platform to register and create',
       lblModel: 'Model',
       lblAutoLaunch: 'Auto launch', descAutoLaunch: 'Launch Samaritan on Windows login',
-      lblArtMode: 'Art Mode', descArtMode: 'Show answers on a minimal art canvas, no chat history',
+      lblArtMode: 'Enable Art Mode', descArtMode: 'Show answers on a minimal art canvas, no chat history',
+      lblArtSpeed: 'Word appearance speed', descArtSpeed: 'Control how fast words type and delete in Art Mode',
+      lblArtStyle: 'Response style', descArtStyle: 'Decides the length and detail level of AI responses in Art Mode',
+      artStyleBrief: 'Brief', artStyleStandard: 'Standard', artStyleComplex: 'Complex',
+      navArt: 'Art Mode',
       lblLang: 'Language', lblWorkspace: 'Default workspace folder',
       btnBrowse: 'Browse',
       btnCancel: 'Cancel', btnSave: 'Save', closeBtn: 'Close',
@@ -389,17 +413,25 @@
     };
     artAnimController = controller;
     title.classList.add('typing');
+    // 立即清空，避免生成过程中累积的完整回答在动画第一帧前闪现
+    title.textContent = '';
 
     const wait = (ms) => new Promise((resolve) => {
       if (cancelled) return resolve();
       activeTimer = setTimeout(resolve, ms);
     });
 
+    const mul = getArtSpeedMultiplier();
+    const TYPE_MS = Math.max(8, Math.round(40 * mul));
+    const DELETE_MS = Math.max(4, Math.round(20 * mul));
+    const HOLD_MS = Math.max(40, Math.round(120 * mul));
+    const GAP_MS = Math.max(10, Math.round(30 * mul));
+
     const typeWord = async (word) => {
       for (let i = 1; i <= word.length; i++) {
         if (cancelled) return;
         title.textContent = word.slice(0, i);
-        await wait(40);
+        await wait(TYPE_MS);
       }
     };
 
@@ -407,7 +439,7 @@
       for (let i = word.length - 1; i >= 0; i--) {
         if (cancelled) return;
         title.textContent = word.slice(0, i);
-        await wait(20);
+        await wait(DELETE_MS);
       }
     };
 
@@ -416,12 +448,12 @@
         if (cancelled) return;
         await typeWord(tokens[idx]);
         if (cancelled) return;
-        await wait(120);
+        await wait(HOLD_MS);
         if (idx < tokens.length - 1) {
           if (cancelled) return;
           await deleteWord(tokens[idx]);
           if (cancelled) return;
-          await wait(30);
+          await wait(GAP_MS);
         }
       }
       title.classList.remove('typing');
@@ -451,9 +483,19 @@
   }
 
   function artSystemPrompt() {
-    return lang === 'en'
-      ? 'Answer extremely concisely in plain text: at most 30 words, no lists, no code blocks, no headings, no markdown. Give only the direct answer.'
-      : '请用极简方式回答：总字数不超过40个汉字，纯文本，不要使用列表、代码块、标题或任何 Markdown 格式，只给出核心结论。';
+    const isEn = lang === 'en';
+    const map = {
+      brief: isEn
+        ? 'Answer extremely concisely in plain text: at most 30 words, no lists, no code blocks, no headings, no markdown. Give only the direct answer.'
+        : '请用极简方式回答：总字数不超过40个汉字，纯文本，不要使用列表、代码块、标题或任何 Markdown 格式，只给出核心结论。',
+      standard: isEn
+        ? 'Answer clearly and naturally in plain text: within about 80 words, no lists, no code blocks, no headings, no markdown. Keep it direct and easy to read.'
+        : '请用清晰自然的方式回答：总字数不超过120个汉字，纯文本，不要使用列表、代码块、标题或任何 Markdown 格式，条理清楚，便于阅读。',
+      complex: isEn
+        ? 'Answer in detail in plain text: within about 200 words, you may use short sentences or brief paragraphs separated by line breaks, but do not use lists, headings, code blocks, or any markdown. Provide a thorough response with key context.'
+        : '请用较详细的方式回答：总字数不超过300个汉字，允许用换行分隔短句或小段，但不要使用列表、标题、代码块或任何 Markdown 格式，给出包含关键背景的完整回答。',
+    };
+    return map[artStyle] || map.standard;
   }
 
   function stopAllAiRoleClusters() {
@@ -1101,6 +1143,9 @@
     $('#cfg-model').value = config.model;
     $('#cfg-autoLaunch').checked = !!config.autoLaunch;
     $('#cfg-artMode').checked = !!artMode;
+    $('#cfg-artSpeed').value = String(artSpeed);
+    $('#art-speed-value').textContent = getArtSpeedLabel();
+    $('#cfg-artStyle').value = artStyle;
     $('#cfg-lang').value = lang;
     $('#cfg-workspace').value = config.workspaceDir || '';
     loadVersion();
@@ -1146,6 +1191,25 @@
     renderActiveSession();
   });
 
+  // 艺术模式速度滑块：实时更新档位标签并保存
+  $('#cfg-artSpeed').addEventListener('input', () => {
+    const v = parseInt($('#cfg-artSpeed').value, 10);
+    if (!isNaN(v) && v >= 1 && v <= 5) {
+      artSpeed = v;
+      $('#art-speed-value').textContent = getArtSpeedLabel();
+      try { localStorage.setItem(LS_ART_SPEED, String(artSpeed)); } catch (e) {}
+    }
+  });
+
+  // 艺术模式回复风格：实时保存
+  $('#cfg-artStyle').addEventListener('change', () => {
+    const v = $('#cfg-artStyle').value;
+    if (v && (v === 'brief' || v === 'standard' || v === 'complex')) {
+      artStyle = v;
+      try { localStorage.setItem(LS_ART_STYLE, artStyle); } catch (e) {}
+    }
+  });
+
   $('#btn-close').addEventListener('click', async () => {
     config.baseUrl = $('#cfg-baseUrl').value.trim() || 'https://api.deepseek.com';
     config.apiKey = $('#cfg-apiKey').value.trim();
@@ -1160,6 +1224,18 @@
     if (newArtMode !== oldArtMode) {
       artMode = newArtMode;
       try { localStorage.setItem(LS_ART, artMode ? '1' : '0'); } catch (e) {}
+    }
+
+    // 艺术模式速度 / 风格（滑块/下拉已在 change 时即时保存，这里保证最终值落盘）
+    const newArtSpeed = parseInt($('#cfg-artSpeed').value, 10);
+    if (!isNaN(newArtSpeed) && newArtSpeed >= 1 && newArtSpeed <= 5 && newArtSpeed !== artSpeed) {
+      artSpeed = newArtSpeed;
+      try { localStorage.setItem(LS_ART_SPEED, String(artSpeed)); } catch (e) {}
+    }
+    const newArtStyle = $('#cfg-artStyle').value;
+    if (newArtStyle && newArtStyle !== artStyle) {
+      artStyle = newArtStyle;
+      try { localStorage.setItem(LS_ART_STYLE, artStyle); } catch (e) {}
     }
 
     // 开机自启
@@ -1453,6 +1529,12 @@
       { tag: 'fix', text: '修复艺术模式回答完成后仍整段显示、无法逐词动画的问题，现在回答结束会按语义拆词一个接一个弹出' },
       { tag: 'improve', text: '加快艺术模式逐词频率，词与词之间更快连续弹出，更像 AI 在快速思考' },
     ],
+    '1.3.0': [
+      { tag: 'fix', text: '修复艺术模式回答生成完毕后、逐词动画开始之前完整回答闪现一瞬的问题' },
+      { tag: 'new', text: '设置新增独立「艺术模式」子项目（原通用里的艺术模式开关已移入此处）' },
+      { tag: 'new', text: '艺术模式可调整词语弹出速度：1-5 档（极慢/慢/中/快/极速）' },
+      { tag: 'new', text: '艺术模式可选择回复风格：简短 / 标准 / 复杂，影响 AI 回答的长度与详细程度' },
+    ],
   };
 
   function openChangelog(ver) {
@@ -1495,6 +1577,10 @@
     if (localStorage.getItem('ai-chat-pin') === '1') setPin(true);
     setLanguage(localStorage.getItem(LS_LANG) || 'zh');
     artMode = localStorage.getItem(LS_ART) === '1';
+    const _sp = parseInt(localStorage.getItem(LS_ART_SPEED) || '3', 10);
+    if (_sp >= 1 && _sp <= 5) artSpeed = _sp;
+    const _st = localStorage.getItem(LS_ART_STYLE);
+    if (_st === 'brief' || _st === 'standard' || _st === 'complex') artStyle = _st;
     try { config = await window.api.getConfig(); } catch (e) {}
     if (config.lang && I18N[config.lang]) setLanguage(config.lang);
     populateModelSelect();

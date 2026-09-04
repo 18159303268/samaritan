@@ -71,6 +71,7 @@
       <div class="settings-nav">
         <button class="nav-item active" data-tab="api" id="nav-api">API配置</button>
         <button class="nav-item" data-tab="general" id="nav-general">通用</button>
+        <button class="nav-item" data-tab="art" id="nav-art" data-i18n="navArt">艺术模式</button>
         <button class="nav-item" data-tab="about" id="nav-about" data-i18n="navAbout">关于</button>
       </div>
       <div class="settings-body">
@@ -101,14 +102,6 @@
         </div>
         <div class="tab-panel" data-tab="general">
           <div class="field row">
-            <div class="field-label" id="lbl-artMode">艺术模式</div>
-            <label class="toggle">
-              <input id="cfg-artMode" type="checkbox">
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <p class="field-desc" id="desc-artMode">以极简艺术画布呈现回答，不显示历史消息</p>
-          <div class="field row">
             <div class="field-label" id="lbl-autoLaunch">开机自启</div>
             <label class="toggle">
               <input id="cfg-autoLaunch" type="checkbox">
@@ -137,6 +130,40 @@
               <button id="btn-import-sessions" class="foot-btn" data-i18n="importSessions">导入聊天记录</button>
             </div>
           </div>
+        </div>
+        <div class="tab-panel" data-tab="art">
+          <div class="field row">
+            <div class="field-label" id="lbl-artMode">启用艺术模式</div>
+            <label class="toggle">
+              <input id="cfg-artMode" type="checkbox">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="field-desc" id="desc-artMode">以极简艺术画布呈现回答，不显示历史消息</p>
+          <div class="field">
+            <span id="lbl-artSpeed">词语弹出速度</span>
+            <div class="speed-control">
+              <input id="cfg-artSpeed" type="range" min="1" max="5" step="1" value="3">
+              <span class="speed-ticks">
+                <span>极慢</span>
+                <span>慢</span>
+                <span>中</span>
+                <span>快</span>
+                <span>极速</span>
+              </span>
+              <span id="art-speed-value" class="speed-value">中</span>
+            </div>
+          </div>
+          <p class="field-desc" id="desc-artSpeed">控制艺术模式回答时词语打字与删除的速度</p>
+          <div class="field">
+            <span id="lbl-artStyle">回复风格</span>
+            <select id="cfg-artStyle" class="select-input">
+              <option value="brief" data-i18n="artStyleBrief">简短</option>
+              <option value="standard" data-i18n="artStyleStandard">标准</option>
+              <option value="complex" data-i18n="artStyleComplex">复杂</option>
+            </select>
+          </div>
+          <p class="field-desc" id="desc-artStyle">决定艺术模式下 AI 回答的长度与详细程度</p>
         </div>
         <div class="tab-panel" data-tab="about">
           <div class="about-version-row">
