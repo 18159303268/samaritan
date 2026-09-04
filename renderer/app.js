@@ -361,48 +361,91 @@
       '</div>';
   }
 
-  // 语义拆分：尽量按词切分（中文用 Intl.Segmenter 分词，英文/数字整体保留，避免中英混拆）
+  // 字符串 hash（确定性，同一词在同一会话内拆/不拆保持稳定）
+  function stableHash(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  // 语义拆分：先用 Intl.Segmenter 拿词级 tokens，再后处理让长度有 1-5 字随机变化
   function splitSemanticTokens(text) {
     const raw = (text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '[图片]').trim();
     if (!raw) return [];
-    const tokens = [];
-    // 1) 优先 Intl.Segmenter 中文分词（按语义切词，如「我」「是」「AI」「没有」「心情」）
+    // 1) Intl.Segmenter 词级切分
+    const base = [];
     if (typeof Intl !== 'undefined' && Intl.Segmenter) {
       try {
         const seg = new Intl.Segmenter('zh-CN', { granularity: 'word' });
-        let got = false;
         for (const s of seg.segment(raw)) {
-          const segText = s.segment;
-          if (!segText) continue;
-          // 保留有语义的词（中文词、英文/数字单词），丢弃纯标点/空白
-          if (s.isWordLike || /[a-zA-Z0-9]/.test(segText) || /[\u3040-\u30ff\u4e00-\u9fa5]/.test(segText)) {
-            tokens.push(segText);
-            got = true;
-          }
+          const t = s.segment;
+          if (!t) continue;
+          if (s.isWordLike || /[a-zA-Z0-9]/.test(t) || /[\u3040-\u30ff\u4e00-\u9fa5]/.test(t)) base.push(t);
         }
-        if (got && tokens.length) return tokens;
       } catch (e) {}
     }
-    // 2) 降级：按字符类型切分，连续中文拆成单字短块，保证逐词动效；英文/数字整体保留
-    let latin = '';
-    const flushLatin = () => { if (latin) { tokens.push(latin); latin = ''; } };
-    for (const ch of raw) {
-      if (/[a-zA-Z0-9._\-]/.test(ch)) {
-        latin += ch;
-      } else {
-        flushLatin();
-        if (/[\u3040-\u30ff\u4e00-\u9fa5]/.test(ch)) tokens.push(ch);
-        // 纯标点直接丢弃
+    if (!base.length) {
+      // 降级：纯中文拆单字 + 英文/数字整体保留
+      let latin = '';
+      const flushLatin = () => { if (latin) { base.push(latin); latin = ''; } };
+      for (const ch of raw) {
+        if (/[a-zA-Z0-9._\-]/.test(ch)) latin += ch;
+        else {
+          flushLatin();
+          if (/[\u3040-\u30ff\u4e00-\u9fa5]/.test(ch)) base.push(ch);
+        }
       }
+      flushLatin();
     }
-    flushLatin();
-    if (!tokens.length) return [raw];
-    return tokens;
+    if (!base.length) return [raw];
+
+    // 2) 后处理：纯中文 token 按稳定 hash 决定是否再切，让最终词块在 1-5 字之间有错落
+    const out = [];
+    for (const t of base) {
+      const isAscii = /[a-zA-Z0-9]/.test(t);
+      if (isAscii) {
+        if (t.length > 5 && /\s/.test(t)) {
+          for (const p of t.split(/\s+/).filter(Boolean)) out.push(p);
+        } else {
+          out.push(t);
+        }
+        continue;
+      }
+      const len = t.length;
+      if (len <= 1) { out.push(t); continue; }
+      if (len === 2) {
+        // 2 字：约 22% 概率拆成单字（增加错落感），其余保留
+        if (stableHash(t + '~2') % 100 < 22) out.push(t[0], t[1]);
+        else out.push(t);
+        continue;
+      }
+      if (len === 3) {
+        // 3 字：约 35% 概率拆成 1+2 或 2+1，保留常见短语优先
+        const r = stableHash(t + '~3') % 100;
+        if (r < 18) out.push(t[0], t.slice(1));        // 1+2
+        else if (r < 35) out.push(t.slice(0, 2), t[2]); // 2+1
+        else out.push(t);
+        continue;
+      }
+      if (len <= 5) { out.push(t); continue; }
+      // >5 字：按 2-3 字随机切（用 hash 选切分点）
+      let rest = t;
+      while (rest.length > 5) {
+        const cut = 2 + (stableHash(rest) % 2);
+        out.push(rest.slice(0, cut));
+        rest = rest.slice(cut);
+      }
+      if (rest) out.push(rest);
+    }
+    return out.length ? out : [raw];
   }
 
-  // 艺术模式：逐个词「打字出现 → 停顿 → 删除 → 下一个」，最后一个词保留
+  // 艺术模式：逐个词「打字出现 → 停顿 → 删除 → 下一个」，最后一个词也删除，留光标闪烁
   function playArtTokens(title, tokens) {
-    if (!tokens.length) { title.textContent = ''; return; }
+    if (!tokens.length) { title.textContent = ''; title.classList.add('typing'); return; }
     let cancelled = false;
     let activeTimer = null;
     const controller = {
@@ -413,8 +456,10 @@
     };
     artAnimController = controller;
     title.classList.add('typing');
-    // 立即清空，避免生成过程中累积的完整回答在动画第一帧前闪现
+    // 立即清空，遮挡 streaming 期间累积的完整文本
     title.textContent = '';
+    // 强制重排一次，确保下一帧从空开始
+    void title.offsetHeight;
 
     const wait = (ms) => new Promise((resolve) => {
       if (cancelled) return resolve();
@@ -426,6 +471,8 @@
     const DELETE_MS = Math.max(4, Math.round(20 * mul));
     const HOLD_MS = Math.max(40, Math.round(120 * mul));
     const GAP_MS = Math.max(10, Math.round(30 * mul));
+    // 最后一个词的保留停顿（固定 1.5s，让用户能看清最后一个词再删除）
+    const LAST_HOLD_MS = 1500;
 
     const typeWord = async (word) => {
       for (let i = 1; i <= word.length; i++) {
@@ -448,15 +495,17 @@
         if (cancelled) return;
         await typeWord(tokens[idx]);
         if (cancelled) return;
-        await wait(HOLD_MS);
-        if (idx < tokens.length - 1) {
-          if (cancelled) return;
-          await deleteWord(tokens[idx]);
-          if (cancelled) return;
-          await wait(GAP_MS);
-        }
+        const isLast = idx === tokens.length - 1;
+        await wait(isLast ? LAST_HOLD_MS : HOLD_MS);
+        if (cancelled) return;
+        // 全部词都删除（不再保留最后一个）
+        await deleteWord(tokens[idx]);
+        if (cancelled) return;
+        if (!isLast) await wait(GAP_MS);
       }
-      title.classList.remove('typing');
+      // 删除完毕后留光标
+      title.textContent = '';
+      // typing 类保持，光标继续闪烁
       artAnimController = null;
     })();
   }
@@ -475,9 +524,12 @@
     if (busy) {
       // 生成过程中直接显示当前累积文本，不播放逐词动画
       title.textContent = clean;
-      title.classList.remove('typing');
       return;
     }
+    // 关键：进入动画前先把 title 设为空（覆盖 onChunk 期间累积的完整文本），
+    // 强制一帧 layout 提交，避免首帧闪现完整回答
+    title.textContent = '';
+    void title.offsetHeight;
     const tokens = splitSemanticTokens(clean);
     playArtTokens(title, tokens);
   }
@@ -1529,11 +1581,10 @@
       { tag: 'fix', text: '修复艺术模式回答完成后仍整段显示、无法逐词动画的问题，现在回答结束会按语义拆词一个接一个弹出' },
       { tag: 'improve', text: '加快艺术模式逐词频率，词与词之间更快连续弹出，更像 AI 在快速思考' },
     ],
-    '1.3.0': [
-      { tag: 'fix', text: '修复艺术模式回答生成完毕后、逐词动画开始之前完整回答闪现一瞬的问题' },
-      { tag: 'new', text: '设置新增独立「艺术模式」子项目（原通用里的艺术模式开关已移入此处）' },
-      { tag: 'new', text: '艺术模式可调整词语弹出速度：1-5 档（极慢/慢/中/快/极速）' },
-      { tag: 'new', text: '艺术模式可选择回复风格：简短 / 标准 / 复杂，影响 AI 回答的长度与详细程度' },
+    '1.4.0': [
+      { tag: 'fix', text: '修复艺术模式回答开始时完整回答文本闪现的问题，现在严格从空开始逐词弹出' },
+      { tag: 'improve', text: '艺术模式词语长度有随机变化：增加 3-5 字短语出现的概率，避免每个词都太规整，更像 AI 在思考' },
+      { tag: 'improve', text: '艺术模式回答结束变化：最后一个词保留 1.5 秒后也删除，保留光标在画布中央闪烁' },
     ],
   };
 
