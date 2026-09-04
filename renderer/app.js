@@ -337,41 +337,41 @@
       '</div>';
   }
 
-  // 语义拆分：尽量按词切分（中文用 Intl.Segmenter 分词，英文/数字整体保留），避免中英混拆
+  // 语义拆分：尽量按词切分（中文用 Intl.Segmenter 分词，英文/数字整体保留，避免中英混拆）
   function splitSemanticTokens(text) {
     const raw = (text || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '[图片]').trim();
     if (!raw) return [];
+    const tokens = [];
+    // 1) 优先 Intl.Segmenter 中文分词（按语义切词，如「我」「是」「AI」「没有」「心情」）
     if (typeof Intl !== 'undefined' && Intl.Segmenter) {
       try {
-        const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
-        const tokens = [];
-        for (const s of segmenter.segment(raw)) {
-          const seg = s.segment.trim();
-          if (s.isWordLike && seg) tokens.push(seg);
+        const seg = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+        let got = false;
+        for (const s of seg.segment(raw)) {
+          const segText = s.segment;
+          if (!segText) continue;
+          // 保留有语义的词（中文词、英文/数字单词），丢弃纯标点/空白
+          if (s.isWordLike || /[a-zA-Z0-9]/.test(segText) || /[\u3040-\u30ff\u4e00-\u9fa5]/.test(segText)) {
+            tokens.push(segText);
+            got = true;
+          }
         }
-        if (tokens.length) return tokens;
+        if (got && tokens.length) return tokens;
       } catch (e) {}
     }
-    // 降级：按字符类型边界拆分，保证英文/数字不被拆开、中文单字独立
-    const tokens = [];
-    let cur = '';
-    let lastType = null;
-    const typeOf = (ch) => {
-      if (/[a-zA-Z0-9._\-]/.test(ch)) return 'latin';
-      if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(ch)) return 'cjk';
-      return 'other';
-    };
+    // 2) 降级：按字符类型切分，连续中文拆成单字短块，保证逐词动效；英文/数字整体保留
+    let latin = '';
+    const flushLatin = () => { if (latin) { tokens.push(latin); latin = ''; } };
     for (const ch of raw) {
-      const t = typeOf(ch);
-      if (t === lastType && t !== 'other') {
-        cur += ch;
+      if (/[a-zA-Z0-9._\-]/.test(ch)) {
+        latin += ch;
       } else {
-        if (cur && lastType !== 'other') tokens.push(cur);
-        cur = t === 'other' ? '' : ch;
+        flushLatin();
+        if (/[\u3040-\u30ff\u4e00-\u9fa5]/.test(ch)) tokens.push(ch);
+        // 纯标点直接丢弃
       }
-      lastType = t;
     }
-    if (cur && lastType !== 'other') tokens.push(cur);
+    flushLatin();
     if (!tokens.length) return [raw];
     return tokens;
   }
@@ -399,7 +399,7 @@
       for (let i = 1; i <= word.length; i++) {
         if (cancelled) return;
         title.textContent = word.slice(0, i);
-        await wait(80);
+        await wait(40);
       }
     };
 
@@ -407,7 +407,7 @@
       for (let i = word.length - 1; i >= 0; i--) {
         if (cancelled) return;
         title.textContent = word.slice(0, i);
-        await wait(45);
+        await wait(20);
       }
     };
 
@@ -416,12 +416,12 @@
         if (cancelled) return;
         await typeWord(tokens[idx]);
         if (cancelled) return;
-        await wait(360);
+        await wait(120);
         if (idx < tokens.length - 1) {
           if (cancelled) return;
           await deleteWord(tokens[idx]);
           if (cancelled) return;
-          await wait(140);
+          await wait(30);
         }
       }
       title.classList.remove('typing');
@@ -840,6 +840,8 @@
     const onDone = () => {
       restoreMark();
       const hasAny = !!(contentBuf || reasoningBuf);
+      // 必须先清 busy，renderArtAnswer 才会播放逐词动画而不是整段显示
+      setBusy(false);
       if (hasAny) {
         renderArtAnswer(contentBuf || reasoningBuf);
         const ai = { role: 'assistant', content: contentBuf, createdAt: Date.now() };
@@ -852,7 +854,6 @@
       } else {
         startWelcome();
       }
-      setBusy(false);
       input.focus();
     };
 
@@ -1447,6 +1448,10 @@
     '1.2.0': [
       { tag: 'new', text: '艺术模式回答动效：回答完成后按语义拆词，逐词「打字出现 → 回退删除 → 下一个词」循环播放，模拟 AI 思考输入' },
       { tag: 'improve', text: '艺术模式语义分词：优先使用 Intl.Segmenter 按词切分，英文/数字整体保留，避免中英混拆' },
+    ],
+    '1.2.1': [
+      { tag: 'fix', text: '修复艺术模式回答完成后仍整段显示、无法逐词动画的问题，现在回答结束会按语义拆词一个接一个弹出' },
+      { tag: 'improve', text: '加快艺术模式逐词频率，词与词之间更快连续弹出，更像 AI 在快速思考' },
     ],
   };
 
